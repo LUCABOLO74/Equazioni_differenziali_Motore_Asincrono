@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Risoluzione equazioni differenziali motore asincrono</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    canvas {
+      width: 400px;
+      height: 300px;
+    }
+  </style>
+</head>
+<body>
+  <button onclick="solveDifferentialEquations()">Risolvi equazioni differenziali</button>
+  <canvas id="graphCanvas"></canvas>
+  <canvas id="graphCanvas2"></canvas>
+<div>
+    <h3>Modifica dei valori</h3>
+    <label for="inertia">Momento di inerzia (J):</label>
+    <input type="number" id="inertia" value="0.1">
+    <br>
+    <label for="friction">Coefficiente di attrito viscoso (B):</label>
+    <input type="number" id="friction" value="0.0">
+    <br>
+    <label for="fix_load">Coppia resistente costante (Tr):</label>
+    <input type="number" id="fix_load" value="0.0">
+    <br>
+    <label for="time">Tempo finale (t_end):</label>
+    <input type="number" id="time" value="1.2">
+    <br>
+    <label for="inductance">Induttanza dello statore (L1):</label>
+    <input type="number" id="inductance" value="0.15088">
+    <br>
+    <label for="resistance1">Resistenza dello statore (R1):</label>
+    <input type="number" id="resistance1" value="1.45">
+    <br>
+    <label for="inductance2">Induttanza della gabbia del rotore (L2):</label>
+    <input type="number" id="inductance2" value="0.15088">
+    <br>
+    <label for="resistance2">Resistenza della gabbia del rotore (R2):</label>
+    <input type="number" id="resistance2" value="1.18">
+    <br>
+    <label for="mutual">Coefficiente di mutua induzione (M):</label>
+    <input type="number" id="mutual" value="0.14324">
+    <br>
+    <label for="polePairs">Numero di paia di poli (Np):</label>
+    <input type="number" id="polePairs" value="2">
+    <br>
+    <button onclick="updateVariables()">Aggiorna variabili</button>
+  </div>
+  
+  <script>
+
+       // Parametri del motore e condizioni iniziali
+      var L1 = 0.15088;   // Induttanza dello statore
+      var R1 = 1.45;   // Resistenza dello statore
+      var L2 = 0.15088;   // Induttanza della gabbia del rotore
+      var R2 = 1.18;   // Resistenza della gabbia del rotore
+      var M = 0.14324;    // Coefficiente di mutua induzione tra statore e rotore
+      
+      var f = 50;     // Frequenza dell'alimentazione
+	  var pulsazione_alimentazione = 2*Math.PI *50;     // Frequenza dell'alimentazione
+	  var numero_poli=4;
+	  	  var Np=numero_poli/2; // numero di coppie polari
+      var omega_s = 2 * Math.PI * f/Np;  // Velocità angolare di sincronismo
+	 
+	  var velocita_sincronismo=omega_s*60/(2 * Math.PI);
+	  console.log("velocità sincroniscmo: ");
+	  console.log(velocita_sincronismo);
+      var Wr =0;
+    	  
+	   var IDS = 0;   // Flusso magnetico diretto dello statore (condizione iniziale)
+      var IQS = 0;   // Flusso magnetico in quadratura dello statore (condizione iniziale)
+      var IDR = 0;   // Flusso magnetico diretto della gabbia del rotore (condizione iniziale)
+      var IQR = 0;   // Flusso magnetico in quadratura della gabbia del rotore (condizione iniziale)
+      
+      var J = 0.1;    // Momento di inerzia
+      var B = 0.0;     // Coefficiente di attrito viscoso
+      
+      var h = 0.001;    // Passo di integrazione
+      var t = 0;       // Tempo iniziale
+      var t_end = 0.8;	; // Tempo finale
+	  var TR0=0.7; // COPPIA RESISTENTE COSTANTE
+      var Tm=0.0;
+	  var x;
+      var  DET=L1*L2-M*M;
+          var Vn = 380.0;                   // Ampiezza della tensione
+		        var idData = [];
+      var iqData = [];
+	        var timeData = [];
+			var iAData = []; // array corrente statorica
+			
+			
+			var x0 = t; // Valore iniziale di x
+var y0 = [IDS,IQS,IDR,IQR,Wr]; // Valori iniziali di y1, y2, y3, y4
+//var h = 0.1;// Incremento di x
+var xfinale=t_end;
+var steps ;
+steps= xfinale/h; // Numero di passi
+
+
+		   function updateVariables() {
+      J = parseFloat(document.getElementById("inertia").value);
+      B = parseFloat(document.getElementById("friction").value);
+      t_end = parseFloat(document.getElementById("time").value);
+      L1 = parseFloat(document.getElementById("inductance").value);
+      R1 = parseFloat(document.getElementById("resistance1").value);
+      L2 = parseFloat(document.getElementById("inductance2").value);
+      R2 = parseFloat(document.getElementById("resistance2").value);
+      M = parseFloat(document.getElementById("mutual").value);
+      Np = parseInt(document.getElementById("polePairs").value);
+	TR0 = parseFloat(document.getElementById("fix_load").value);	
+	  omega_s = 2 * Math.PI * f/(Np);
+	  DET=L1*L2-M*M;
+    }
+	// Esempio di sistema di equazioni:
+// dy1/dx = y1
+// dy2/dx = y1 - y2 + y3 - y4
+// dy3/dx = y1 + y2 - y3 - y4
+// dy4/dx = -y1 + y2 + y3 - y4
+var equations = [
+  function(x, y) { 
+  
+          var vd = Vn * Math.cos(-pulsazione_alimentazione * x);   // Componente in quadratura
+        var vq = Vn * Math.cos(Math.PI/2- pulsazione_alimentazione * x);   // Componente diretta
+  Wr=y[4];
+  return (-R1*L2*y[0]+Wr*M*M*y[1]+R2*M*y[2]+Wr*M*L2*y[3]+L2*vd)/DET ;},
+  function(x, y) { 
+          var vd = Vn * Math.cos(-pulsazione_alimentazione * x);   // Componente in quadratura
+        var vq = Vn * Math.cos(Math.PI/2- pulsazione_alimentazione * x);   // Componente diretta
+  Wr=y[4];
+  return (-Wr*M*M*y[0]-R1*L2*y[1]-Wr*M*L2*y[2]+R2*M*y[3]+L2*vq)/DET ;},
+  function(x, y) { 
+  
+          var vd = Vn * Math.cos(-pulsazione_alimentazione * x);   // Componente in quadratura
+        var vq = Vn * Math.cos(Math.PI/2- pulsazione_alimentazione * x);   // Componente diretta
+  Wr=y[4];
+  return (R1*M*y[0]-Wr*M*L1*y[1]-L1*R2*y[2]-Wr*L1*L2*y[3]-M*vd)/DET;},
+  function(x, y) { 
+           var vd = Vn * Math.cos(-pulsazione_alimentazione * x);   // Componente in quadratura
+        var vq = Vn * Math.cos(Math.PI/2- pulsazione_alimentazione * x);   // Componente diretta
+  Wr=y[4];
+  return (Wr*M*L1*y[0]+R1*M*y[1]+Wr*L1*L2*y[2]-L1*R2*y[3]-M*vq)/DET; },
+  
+    function(x, y) { 
+  
+ 
+		Tm = Np* M*(   y[1] * y[2]-  y[0] * y[3] );
+        var Tr = TR0+ B * (y[4] * y[4]);
+        
+        // Derivata della velocità angolare
+        		
+  return ((Tm - Tr) / J); }
+  
+];
+
+console.log(steps);
+function solveDifferentialEquations(){
+var result = rungeKuttaSystem(equations, x0, y0, h, steps);
+console.log(result);
+console.log(x);
+
+ createChart("graphCanvas",timeData,idData, iqData,"velocità", "coppia" );
+createChart("graphCanvas2",timeData,iAData, iAData, "corrente armatura", "corrente armatura");
+};
+	
+	function createChart(id_canvas,ordinate,ascisse1, ascisse2,label1, label2) {
+      var ctx = document.getElementById(id_canvas).getContext("2d");
+
+
+
+      // Codice per la creazione del grafico
+      var chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: ordinate,
+          datasets: [
+            {
+              label: label1,
+              data: ascisse1,
+              yAxisID: 'y1', // Assegna l'ID dell'asse Y per questa serie di dati
+              borderColor: 'blue',
+              borderWidth: 2,
+              fill: false
+            },
+            {
+              label: label2,
+              data: ascisse2,
+              yAxisID: 'y2', // Assegna l'ID dell'asse Y per questa serie di dati
+              borderColor: 'red',
+              borderWidth: 2,
+              fill: false
+            }
+          ]
+        },
+        options: {
+          scales: {
+            y: {
+              y1: {
+                type: 'linear',
+                display: true,
+                position: 'left',
+                title: {
+                  display: true,
+                  text: 'Velocità (RPM)'
+                }
+              },
+              y2: {
+                type: 'linear',
+                display: true,
+                position: 'right',
+                grid: {
+                  drawOnChartArea: false // Nasconde le linee dell'asse Y per questa serie di dati
+                },
+                title: {
+                  display: true,
+                  text: 'Coppia (N-m)'
+                }
+              }
+            }
+          }
+        }
+      });
+    }
+	
+	function rungeKuttaSystem(f, x0, y0, h, steps) {
+  var n = y0.length;
+  //var x = x0;
+
+x=x0;
+  var y = y0.slice();
+
+  for (var i = 0; i < steps; i++) {
+    var k1 = [];
+    var k2 = [];
+    var k3 = [];
+    var k4 = [];
+    var yTemp = y.slice();
+
+    for (var j = 0; j < n; j++) {
+      k1[j] = h * f[j](x, yTemp);
+    }
+
+    for (var j = 0; j < n; j++) {
+      yTemp[j] = y[j] + k1[j] / 2;
+    }
+
+    for (var j = 0; j < n; j++) {
+      k2[j] = h * f[j](x + h / 2, yTemp);
+    }
+
+    for (var j = 0; j < n; j++) {
+      yTemp[j] = y[j] + k2[j] / 2;
+    }
+
+    for (var j = 0; j < n; j++) {
+      k3[j] = h * f[j](x + h / 2, yTemp);
+    }
+
+    for (var j = 0; j < n; j++) {
+      yTemp[j] = y[j] + k3[j];
+    }
+
+    for (var j = 0; j < n; j++) {
+      k4[j] = h * f[j](x + h, yTemp);
+    }
+
+    for (var j = 0; j < n; j++) {
+      y[j] = y[j] + (k1[j] + 2 * k2[j] + 2 * k3[j] + k4[j]) / 6;
+    }
+
+    x += h;
+	        // Calcolo della velocità in giri al minuto
+		Wr=y[4];
+		var corrrente_statorica = Math.sqrt(2/3)*y[ 0];
+        var velocityRPM = (60 * (Wr )) / (2 * Math.PI)/Np;
+        t=x;
+        // Aggiunta dei dati al grafico
+        timeData.push(t);
+        idData.push(velocityRPM);
+		//idData.push(Tm);
+        iqData.push(Tm);
+		iAData.push(corrrente_statorica);
+  }
+
+  return y;
+}
+	
+  </script>
+</body>
+</html>
